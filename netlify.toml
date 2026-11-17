@@ -1,14 +1,4 @@
+# Netlify só hospeda a parte visual (pasta public). O backend é o Google Apps Script ligado à planilha (apps-script/Code.gs).
+# O painel admin (local/admin_marcador_sala.html) NUNCA vai para o Netlify.
 [build]
-  publish = "public"          # só a pasta public vai ao ar (o painel admin NUNCA fica aqui)
-  functions = "netlify/functions"
-
-[functions]
-  node_bundler = "esbuild"
-
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
-
-[functions."aquecer"]
-  schedule = "*/4 * * * *"
+  publish = "public"

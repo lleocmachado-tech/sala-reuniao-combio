@@ -225,7 +225,8 @@ label input:focus,label select:focus{outline:none;border-color:var(--v)}
 
 <script>
 'use strict';
-const API = '/api';
+// Backend = Google Apps Script ligado à planilha. Para trocar de planilha/implantação, mude só esta linha.
+const API = 'https://script.google.com/macros/s/AKfycbwuI2n5ELxAJBCzmewe06bYXR1DfbA4NuI7r_9vSNr0T_fBl_B3W_TUb0hAmalaLJOHww/exec';
 const TZ = 'America/Sao_Paulo';
 const ABRE = 420, FECHA = 1080; // 07:00–18:00 em minutos
 const DIAS = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
@@ -245,16 +246,26 @@ function agora() {
   return { data: `${p.year}-${p.month}-${p.day}`, min: +p.hour * 60 + +p.minute, hms: `${p.hour}:${p.minute}:${p.second}` };
 }
 
+// caminho no formato "/rota?x=1". GET simples (sem preflight CORS) para ler; POST text/plain para gravar.
 async function api(caminho, opts) {
-  try {
-    const r = await fetch(API + caminho, opts);
-    const j = await r.json().catch(() => ({}));
-    return { ok: r.ok, status: r.status, data: j };
-  } catch {
-    return { ok: false, status: 0, data: { erro: 'Sem conexão com o servidor. Verifique a internet e tente novamente.' } };
+  const [rota, qs] = caminho.slice(1).split('?');
+  const gravar = opts && opts.body;
+  // O Google às vezes trava uma chamada ou devolve página de erro: desistimos após 10 s e repetimos (até 3x).
+  // Gravação repetida leva o mesmo reqId: o servidor não grava duas vezes, devolve o resultado da 1ª.
+  const reqId = gravar ? (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()) : '';
+  for (let t = 0; t < 3; t++) {
+    try {
+      const sinal = AbortSignal.timeout(10000);
+      const r = gravar
+        ? await fetch(API, { method: 'POST', signal: sinal, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ rota, reqId, ...JSON.parse(opts.body) }) })
+        : await fetch(API + '?rota=' + rota + (qs ? '&' + qs : ''), { signal: sinal });
+      const j = await r.json();
+      return { ok: !j.erro, status: j.status || 200, data: j };
+    } catch { /* tenta de novo */ }
   }
+  return { ok: false, status: 0, data: { erro: gravar ? 'Sem resposta do servidor. Confira a lista de reservas antes de tentar de novo.' : 'Sem conexão com o servidor. Verifique a internet e tente novamente.' } };
 }
-const post = (c, corpo) => api(c, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+const post = (c, corpo) => api(c, { body: JSON.stringify(corpo) });
 
 /* ---------------- estado e carga ---------------- */
 let dia = agora().data;
