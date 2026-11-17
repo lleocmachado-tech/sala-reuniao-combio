@@ -20,11 +20,11 @@ async function chamar(dados) {
   let j, r, txt;
   // ponytail: o Apps Script falha de vez em quando (HTML de erro/rede). Repetimos só o que é seguro repetir:
   // leitura e atualização (idempotentes). Inserir/excluir não, para não duplicar nem apagar a linha errada.
-  const tentativas = ['ler', 'atualizar'].includes(dados.acao) ? 3 : 1;
+  const idem = ['ler', 'atualizar'].includes(dados.acao), tentativas = idem ? 3 : 1, limite = idem ? 8000 : 20000;
   for (let t = 0; t < tentativas && !j; t++) {
     if (t) await new Promise((ok) => setTimeout(ok, 700));
     try {
-      r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ chave, ...dados }), redirect: 'follow', signal: AbortSignal.timeout(12000) });
+      r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ chave, ...dados }), redirect: 'follow', signal: AbortSignal.timeout(limite) });
       txt = await r.text();
       try { j = JSON.parse(txt); } catch { console.error('Apps Script resposta não-JSON', r.status, txt.slice(0, 200)); }
     } catch (e) { console.error('Apps Script rede', e.name); }
