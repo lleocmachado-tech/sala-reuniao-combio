@@ -36,3 +36,15 @@ Base: crie primeiro a reserva **A**: dia D, **09:00–10:30**, "Ana", "Kickoff".
 | 25 | Privacidade | Abra `https://SEU-SITE/api/reservas?data=AAAA-MM-DD` | JSON só com id, data, início, fim, responsável, motivo — **sem PIN/hash**, sem canceladas | |
 
 \* Teste 7 sem terminal: no Painel 2 também só há selects válidos; use o endereço de teste no navegador **não** serve (é POST). Alternativa: confie nos testes automáticos (`node --test tests/core.test.js`, caso "horário"), que cobrem 06:30, 18:30, 09:15 e fim ≤ início.
+
+## Visão semanal e calendário (novo)
+
+| # | Teste | Esperado |
+|---|---|---|
+| 30 | Painel 1: "Visão da semana" | Grade seg–sáb 07:00–18:00; ocupados coloridos por responsável; livres claros; passado hachurado; ◀ Semana / Semana ▶ mostram semanas futuras |
+| 31 | Painel 1: clicar em horário livre | Abre "Reservar sala" já com data e início preenchidos |
+| 32 | Painel 2: arrastar uma reserva avulsa | Muda dia/horário; conflito pede confirmação para forçar; Observação admin registra |
+| 33 | Painel 2: puxar a borda de baixo | Altera só o horário de fim |
+| 34 | Painel 2: arrastar reunião recorrente (faixa amarela) | Pede confirmação e altera a série inteira |
+| 35 | Painel 2: clicar em horário vazio → Repetir "por 4 semanas" | Cria série com última ocorrência 3 semanas depois da primeira; "para sempre" cria sem fim |
+| 36 | Painel 2: recorrente → Termina (nunca / N semanas / data) | Vigência gravada conforme escolhido |
