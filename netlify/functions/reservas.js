@@ -4,7 +4,7 @@ const { rota } = require('../lib/http');
 const C = require('../lib/core');
 const { pub } = require('../lib/ops');
 
-exports.handler = rota({ metodo: 'GET' }, async ({ query, agora, abrir }) => {
+exports.handler = rota({ metodo: 'GET', cdn: 20 }, async ({ query, agora, abrir }) => {
   const de = query.data || query.de, ate = query.data || query.ate || de;
   if (!C.isData(de || '') || !C.isData(ate || '')) throw new C.Erro(400, 'Informe ?data=AAAA-MM-DD ou ?de=...&ate=...');
   if (ate < de || (Date.parse(ate) - Date.parse(de)) / 864e5 > 62) throw new C.Erro(400, 'Período inválido (máximo de 62 dias).');

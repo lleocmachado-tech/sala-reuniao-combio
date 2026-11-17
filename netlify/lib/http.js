@@ -26,7 +26,7 @@ const hash = (s) => crypto.createHash('sha256').update(String(s)).digest();
 const iguais = (a, b) => crypto.timingSafeEqual(hash(a), hash(b));
 
 // fn({ query, body, agora, ip, abrir }) -> objeto JSON
-function rota({ metodo, admin = false }, fn) {
+function rota({ metodo, admin = false, cdn = 0 }, fn) {
   return async (event) => {
     try {
       if (event.httpMethod === 'OPTIONS') return resp(204, null, admin);
@@ -48,7 +48,10 @@ function rota({ metodo, admin = false }, fn) {
         try { body = JSON.parse(event.body || '{}'); } catch { throw new C.Erro(400, 'Corpo da requisição inválido.'); }
       }
       const out = await fn({ query: event.queryStringParameters || {}, body, agora: C.agora(), ip, abrir });
-      return resp(200, out, admin);
+      const r = resp(200, out, admin);
+      // cdn: o CDN do Netlify guarda a resposta por N s e serve a antiga enquanto atualiza em segundo plano (esconde a lentidão do Apps Script). Só para dados públicos.
+      if (cdn) r.headers['Netlify-CDN-Cache-Control'] = `public, s-maxage=${cdn}, stale-while-revalidate=300`;
+      return r;
     } catch (e) {
       if (e instanceof C.Erro) return resp(e.status, { erro: e.message, ...e.extra }, admin);
       console.error(e);
