@@ -1,0 +1,6 @@
+local/
+node_modules/
+
+# imagens soltas (foto da agenda, prints)
+a105a390-*.png
+Captura de tela*.png
