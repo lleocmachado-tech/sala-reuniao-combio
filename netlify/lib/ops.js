@@ -3,7 +3,7 @@
 const C = require('./core');
 const { Erro } = C;
 
-const pub = (r) => ({ id: r.id, data: r.data, inicio: r.inicio, fim: r.fim, responsavel: r.responsavel, motivo: r.motivo });
+const pub = (r) => ({ id: r.id, data: r.data, inicio: r.inicio, fim: r.fim, responsavel: r.responsavel, motivo: r.motivo, recorrente: !!r.recorrente });
 const adm = (r) => ({ ...pub(r), status: r.status, criadoEm: r.criadoEm, origem: r.origem, obs: r.obs || '' });
 const carimbo = (ag) => `${C.fmtData(ag.data)} ${C.toHHMM(ag.min)}`;
 

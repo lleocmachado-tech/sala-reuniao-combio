@@ -88,6 +88,31 @@ main{max-width:1500px;margin:0 auto;padding:clamp(12px,2vw,28px);display:grid;ga
 .dia .bar i{display:block;height:100%;background:var(--verm)}
 @media(max-width:560px){.sem{grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}.dia .q{display:none}}
 
+/* VISÃO DA SEMANA (seg–sáb) */
+.sg-wrap{overflow-x:auto;padding-bottom:6px}
+.sg{min-width:700px}
+.sg-cab,.sg-corpo{display:grid;grid-template-columns:48px repeat(6,minmax(0,1fr));gap:0 4px}
+.sg-cab{position:sticky;top:0;background:#fff;z-index:3;padding-bottom:4px}
+.sg-d{text-align:center;border:2px solid var(--bd);border-radius:10px;padding:6px 2px;cursor:pointer;font-size:.85rem;color:var(--tx2)}
+.sg-d b{display:block;font-size:1.05rem;color:var(--tx)}
+.sg-d:hover{background:var(--v-cla)}
+.sg-d.sel{border-color:var(--v);background:var(--v-cla)}
+.sg-d.hoje b{background:var(--v);color:#fff;border-radius:99px;display:inline-block;padding:0 10px}
+.sg-h{position:relative;font-size:.75rem;color:var(--tx2);font-variant-numeric:tabular-nums}
+.sg-h span{position:absolute;right:6px;transform:translateY(-50%)}
+.sg-col{position:relative;border:2px solid var(--bd);border-radius:10px;overflow:hidden;background:#fff}
+.sl{height:var(--hs);border-top:1px dotted var(--bd)}
+.sl.h{border-top:1px solid var(--bd)}
+.sl:first-child{border-top:0}
+.sl.livre{background:var(--v-tenue);cursor:pointer}
+.sl.livre:hover{background:var(--v-cla);box-shadow:inset 0 0 0 2px var(--v-med)}
+.sl.passou{background:repeating-linear-gradient(45deg,#f3f3f3 0 6px,#fafafa 6px 12px)}
+.bl{position:absolute;left:2px;right:2px;color:#fff;border-radius:7px;padding:3px 6px;overflow:hidden;font-size:.78rem;line-height:1.2;box-shadow:0 1px 3px #0003;border-left:4px solid #fff6}
+.bl b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bl small{display:block;opacity:.92;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sg-agora{position:absolute;left:0;right:0;height:2px;background:#111;z-index:2}
+.leg2{display:flex;gap:6px 16px;flex-wrap:wrap;font-size:.85rem;color:var(--tx2);margin-top:10px}
+.leg2 i{display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:-2px;margin-right:6px}
 #aviso{display:none;background:var(--amar-cla);color:#6b4510;border:1px solid #e5c37a;border-radius:10px;padding:8px 14px}
 footer{text-align:center;color:var(--tx2);font-size:.85rem;padding:0 12px 20px}
 
@@ -150,10 +175,20 @@ label input:focus,label select:focus{outline:none;border-color:var(--v)}
     <div class="leg"><span><i style="background:var(--v-cla)"></i>Livre</span><span><i style="background:var(--verm)"></i>Ocupado</span></div>
   </section>
 
-  <div class="duas">
-    <section class="card"><h2>Reservas do dia</h2><div id="lista"></div></section>
-    <section class="card"><h2>Semana</h2><div class="sem" id="semana"></div></section>
-  </div>
+  <section class="card">
+    <div class="nav">
+      <button class="btn sec" id="sAnt" aria-label="Semana anterior">◀ Semana</button>
+      <button class="btn sec" id="sHoje">Esta semana</button>
+      <button class="btn sec" id="sProx" aria-label="Próxima semana">Semana ▶</button>
+      <div class="dataTit" id="semTit"></div>
+    </div>
+    <h2 style="margin-top:16px">Visão da semana — horários livres e reservados</h2>
+    <div class="sg-wrap"><div class="sg" id="semana"></div></div>
+    <div class="leg2" id="semLeg"></div>
+    <div class="vazio" style="padding:6px 0 0;font-size:.85rem">Clique em um horário livre para reservar. Cada cor é um responsável.</div>
+  </section>
+
+  <section class="card"><h2>Reservas do dia</h2><div id="lista"></div></section>
 </main>
 <footer>Atualiza automaticamente a cada 60 s · Horário de Brasília · Funcionamento 07:00–18:00</footer>
 
@@ -302,16 +337,37 @@ function renderDia() {
     : '<div class="vazio">Nenhuma reserva neste dia.</div>';
 }
 
+/* cor estável por responsável (mesmo nome = mesma cor, em qualquer semana) */
+function corDe(nome) {
+  let h = 7;
+  for (const c of String(nome).trim().toLowerCase()) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return `hsl(${Math.round((h * 137.508) % 360)} 58% ${[30, 37, 43][(h >>> 9) % 3]}%)`;
+}
+const HS = 32; // altura (px) de cada meia hora na grade
 function renderSemana() {
-  const hoje = agora().data, seg = segunda(dia);
-  $('semana').innerHTML = Array.from({ length: 7 }, (_, i) => {
-    const d = addDias(seg, i), l = doDia(d);
-    const h = l.reduce((s, r) => s + mins(r.fim) - mins(r.inicio), 0);
-    return `<div class="dia${d === dia ? ' sel' : ''}${d === hoje ? ' hoje' : ''}" data-d="${d}" role="button" tabindex="0" title="${fmtData(d)}">
-      <div class="ds">${DIAS[dow(d)]}</div><div class="dd">${d.slice(8)}</div>
-      <div class="q">${l.length} reserva${l.length === 1 ? '' : 's'}</div>
-      <div class="bar"><i style="width:${Math.min(100, h / (FECHA - ABRE) * 100)}%"></i></div></div>`;
+  const a = agora(), seg = segunda(dia), n = (FECHA - ABRE) / 30;
+  const dias = Array.from({ length: 6 }, (_, i) => addDias(seg, i)); // segunda a sábado
+  $('semTit').textContent = `Semana de ${fmtData(dias[0])} a ${fmtData(dias[5])}`;
+  const cab = '<div></div>' + dias.map((d) => `<div class="sg-d${d === a.data ? ' hoje' : ''}${d === dia ? ' sel' : ''}" data-d="${d}" title="Ver ${fmtData(d)}">${DIAS[dow(d)]}<b>${d.slice(8)}/${d.slice(5, 7)}</b></div>`).join('');
+  const horas = '<div class="sg-h" style="height:' + n * HS + 'px">' + Array.from({ length: (FECHA - ABRE) / 60 + 1 }, (_, i) => `<span style="top:${i * 2 * HS}px">${hhmm(ABRE + i * 60)}</span>`).join('') + '</div>';
+  const resp = new Map();
+  const cols = dias.map((d) => {
+    let sl = '';
+    for (let i = 0; i < n; i++) {
+      const m = ABRE + i * 30, passou = d < a.data || (d === a.data && m + 30 <= a.min);
+      sl += `<div class="sl${i % 2 ? '' : ' h'} ${passou ? 'passou' : 'livre'}" data-d="${d}" data-m="${m}"${passou ? '' : ` title="Livre ${hhmm(m)} · clique para reservar"`}></div>`;
+    }
+    const bl = doDia(d).map((r) => {
+      const i = mins(r.inicio), f = mins(r.fim), c = corDe(r.responsavel);
+      resp.set(r.responsavel.trim().toLowerCase(), [r.responsavel, c]);
+      return `<div class="bl" style="top:${(i - ABRE) / 30 * HS}px;height:${(f - i) / 30 * HS - 2}px;background:${c}" title="${esc(r.inicio)}–${esc(r.fim)} · ${esc(r.responsavel)} — ${esc(r.motivo)}"><b>${esc(r.inicio)}–${esc(r.fim)} ${esc(r.responsavel)}</b><small>${esc(r.motivo)}</small></div>`;
+    }).join('');
+    const ag = d === a.data && a.min >= ABRE && a.min <= FECHA ? `<div class="sg-agora" style="top:${(a.min - ABRE) / 30 * HS}px"></div>` : '';
+    return `<div class="sg-col">${sl}${bl}${ag}</div>`;
   }).join('');
+  $('semana').innerHTML = `<div class="sg-cab">${cab}</div><div class="sg-corpo" style="--hs:${HS}px">${horas}${cols}</div>`;
+  $('semLeg').innerHTML = '<span><i style="background:var(--v-tenue);border:1px solid var(--bd)"></i>Livre</span>'
+    + [...resp.values()].sort((x, y) => x[0].localeCompare(y[0])).map(([nome, c]) => `<span><i style="background:${c}"></i>${esc(nome)}</span>`).join('');
 }
 
 function irPara(d) { if (!d) return; dia = d; carregar(); }
@@ -319,8 +375,13 @@ $('bAnt').onclick = () => irPara(addDias(dia, -1));
 $('bProx').onclick = () => irPara(addDias(dia, 1));
 $('bHoje').onclick = () => irPara(agora().data);
 $('seletor').onchange = (e) => irPara(e.target.value);
-$('semana').addEventListener('click', (e) => { const c = e.target.closest('.dia'); if (c) irPara(c.dataset.d); });
-$('semana').addEventListener('keydown', (e) => { if (e.key === 'Enter') { const c = e.target.closest('.dia'); if (c) irPara(c.dataset.d); } });
+$('sAnt').onclick = () => irPara(addDias(dia, -7));
+$('sProx').onclick = () => irPara(addDias(dia, 7));
+$('sHoje').onclick = () => irPara(agora().data);
+$('semana').addEventListener('click', (e) => {
+  const c = e.target.closest('.sg-d'); if (c) return irPara(c.dataset.d);
+  const s = e.target.closest('.sl.livre'); if (s) abrirReserva(s.dataset.d, +s.dataset.m);
+});
 
 /* relógio (1 s) e atualização (60 s) */
 let minAnt = -1;
@@ -346,20 +407,21 @@ function preencherFim() {
   fRes.fim.innerHTML = opts(slots(i + 30, FECHA));
   fRes.fim.value = atual && mins(atual) > i ? atual : hhmm(Math.min(i + 60, FECHA));
 }
-$('bReservar').onclick = () => {
+$('bReservar').onclick = () => abrirReserva();
+function abrirReserva(d0, m0) { // d0/m0 opcionais: horário clicado na grade da semana
   const a = agora();
   if (!fRes.isConnected) restaurarForm();
   fRes.reset();
   fRes.data.min = a.data;
-  fRes.data.value = dia < a.data ? a.data : dia;
+  fRes.data.value = d0 || (dia < a.data ? a.data : dia);
   fRes.inicio.innerHTML = opts(slots(ABRE, FECHA - 30));
   const prox = Math.min(FECHA - 30, Math.max(ABRE, Math.ceil((a.min + 1) / 30) * 30));
-  fRes.inicio.value = (fRes.data.value === a.data ? hhmm(prox) : '09:00');
+  fRes.inicio.value = m0 != null ? hhmm(m0) : (fRes.data.value === a.data ? hhmm(prox) : '09:00');
   preencherFim();
   $('resErro').className = 'msg';
   verificar();
   $('dRes').showModal();
-};
+}
 function restaurarForm() { /* reabre o formulário após a tela de sucesso */ $('resCorpo').replaceChildren(fRes); }
 
 let cacheDia = {}, tokenVer = 0;
