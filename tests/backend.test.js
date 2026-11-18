@@ -7,8 +7,10 @@ const fs = require('fs'), vm = require('vm'), crypto = require('crypto'), path =
 const CAB_RES = ['ID Reserva', 'Data', 'Início', 'Fim', 'Responsável', 'Motivo', 'PIN (hash)', 'Status', 'Criado em', 'Origem', 'Observação admin'];
 const CAB_REC = ['ID Série', 'Dia da semana', 'Início', 'Fim', 'Responsável', 'Motivo', 'Status', 'Vigência início', 'Vigência fim', 'Criado em', 'Observação admin'];
 
+const CAB_SOL = ['ID Solicitação', 'ID Reunião', 'Data', 'Início', 'Fim', 'Reunião', 'Solicitante', 'Motivo do cancelamento', 'Status', 'Criado em', 'Decidido em'];
+
 function ambiente() {
-  const dados = { Reservas: [CAB_RES.slice()], Recorrentes: [CAB_REC.slice()] };
+  const dados = { Reservas: [CAB_RES.slice()], Recorrentes: [CAB_REC.slice()], 'Solicitações': [CAB_SOL.slice()] };
   const aba = (nome) => ({
     getDataRange: () => ({ getDisplayValues: () => dados[nome].map((l) => l.slice()) }),
     getLastRow: () => dados[nome].length,
@@ -65,26 +67,46 @@ test('validações: passado, fora do expediente, múltiplos de 30, campos, fórm
   assert.equal(r.responsavel, 'teste'); assert.equal(r.motivo, '1+1');
 });
 
-test('cancelar sem PIN: libera o horário, vira pendência; admin confirma ou reativa', () => {
+const C = (o) => ({ rota: 'cancelar', nome: 'Ana', motivo: 'mudou', ...o });
+test('cancelar: só vira solicitação (calendário intacto); admin aprova ou recusa', () => {
   const { chama } = ambiente(), ad = (d) => chama(d, true);
   const { reserva } = chama(R());
-  assert.equal(chama({ rota: 'cancelar', id: 'NAOEXIST' }).status, 404);
-  assert.equal(chama({ rota: 'cancelar', id: reserva.id }).ok, true);
-  assert.equal(chama({ rota: 'reservas', data: '2030-01-10' }).reservas.length, 0, 'horário liberado');
-  assert.equal(chama({ rota: 'cancelar', id: reserva.id }).status, 400, 'já cancelada');
-  const p = ad({ rota: 'admin-listar', status: 'Cancelada (pendente)' }).reservas;
-  assert.equal(p.length, 1); assert.match(p[0].obs, /solicitado pelo painel público/);
-  assert.equal(ad({ rota: 'admin-reativar', id: reserva.id }).reserva.status, 'Ativa');
-  chama({ rota: 'cancelar', id: reserva.id });
-  const c = ad({ rota: 'admin-cancelar', id: reserva.id });
-  assert.equal(c.reserva.status, 'Cancelada'); assert.match(c.reserva.obs, /confirmado pelo admin/);
-  assert.equal(ad({ rota: 'admin-listar', status: 'Cancelada (pendente)' }).reservas.length, 0);
+  assert.equal(chama(C({ id: 'NAOEXIST', data: '2030-01-10' })).status, 404);
+  assert.equal(chama(C({ id: reserva.id, nome: '' })).status, 400);
+  assert.equal(chama(C({ id: reserva.id, motivo: '' })).status, 400);
+  assert.equal(chama(C({ id: reserva.id })).ok, true);
+  assert.equal(chama({ rota: 'reservas', data: '2030-01-10' }).reservas.length, 1, 'continua no calendário público');
+  assert.equal(chama(C({ id: reserva.id })).status, 400, 'duplicada');
+  const p = ad({ rota: 'admin-listar' }).solicitacoes;
+  assert.equal(p.length, 1); assert.equal(p[0].nome, 'Ana');
+  ad({ rota: 'admin-decidir', id: p[0].id, decisao: 'recusar' });
+  assert.equal(chama({ rota: 'reservas', data: '2030-01-10' }).reservas.length, 1, 'recusada: segue');
+  chama(C({ id: reserva.id }));
+  const q = ad({ rota: 'admin-listar' }).solicitacoes;
+  assert.equal(q.length, 1);
+  ad({ rota: 'admin-decidir', id: q[0].id, decisao: 'aprovar' });
+  assert.equal(chama({ rota: 'reservas', data: '2030-01-10' }).reservas.length, 0, 'aprovada: sai');
+  assert.equal(ad({ rota: 'admin-decidir', id: q[0].id, decisao: 'aprovar' }).status, 400, 'já decidida');
+});
+
+test('cancelar ocorrência de reunião recorrente: aprovação tira só aquela data', () => {
+  const { chama } = ambiente(), ad = (d) => chama(d, true);
+  const s = ad({ rota: 'admin-recorrente', acao: 'criar', dia: 'Quarta-feira', inicio: '09:00', fim: '10:00', responsavel: 'Time', motivo: 'Semanal', vigIni: '2030-01-01' }).recorrente;
+  const dia = (d) => chama({ rota: 'reservas', data: d }).reservas.length;
+  assert.equal(chama(C({ id: s.id, data: '2030-01-10' })).status, 404, 'data fora da série (quinta)');
+  assert.equal(chama(C({ id: s.id, data: '2030-01-16' })).ok, true);
+  assert.equal(dia('2030-01-16'), 1, 'pendente: segue');
+  ad({ rota: 'admin-decidir', id: ad({ rota: 'admin-listar' }).solicitacoes[0].id, decisao: 'aprovar' });
+  assert.equal(dia('2030-01-16'), 0, 'só esse dia some');
+  assert.equal(dia('2030-01-09'), 1); assert.equal(dia('2030-01-23'), 1);
+  assert.ok(chama(R({ data: '2030-01-16', inicio: '09:00', fim: '10:00' })).reserva, 'horário liberado');
 });
 
 test('privacidade: leitura pública sem PIN/hash/canceladas', () => {
-  const { chama } = ambiente();
+  const { chama } = ambiente(), ad = (d) => chama(d, true);
   const a = chama(R()); chama(R({ inicio: '13:00', fim: '14:00' }));
-  chama({ rota: 'cancelar', id: a.reserva.id });
+  chama(C({ id: a.reserva.id }));
+  ad({ rota: 'admin-decidir', id: ad({ rota: 'admin-listar' }).solicitacoes[0].id, decisao: 'aprovar' });
   const g = chama({ rota: 'reservas', data: '2030-01-10' }).reservas;
   assert.equal(g.length, 1);
   assert.deepEqual(Object.keys(g[0]).sort(), ['data', 'fim', 'id', 'inicio', 'motivo', 'recorrente', 'responsavel']);

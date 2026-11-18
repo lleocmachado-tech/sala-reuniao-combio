@@ -13,13 +13,13 @@ O painel público e o admin conversam direto com a URL do Apps Script. Não há 
 
 | Quem | O que faz |
 |---|---|
-| Painel público (Pages) | Vê a semana (livre/ocupado, uma cor por responsável), reserva e cancela sem PIN (o cancelamento libera o horário e vira uma pendência no admin) |
+| Painel público (Pages) | Vê a semana (livre/ocupado, uma cor por responsável), reserva e solicita cancelamento (nome, motivo e reunião; só o admin aprova e, em recorrente, só aquele dia sai) |
 | Painel admin (local) | Calendário da semana: clicar cria, clicar numa reunião edita, arrastar remaneja, puxar a borda muda o fim. Reuniões recorrentes (para sempre, por N semanas ou até uma data) e senha de admin |
 | Apps Script | Valida 07:00–18:00 em blocos de 30 min, sem passado, sem conflito (encostar vale), uma gravação por vez |
 
 ## Configurar (uma vez)
 
-1. **Planilha:** abas `Reservas` e `Recorrentes` com os cabeçalhos da linha 1 (veja `Code.gs`, constantes `RES` e `REC`).
+1. **Planilha:** abas `Reservas` e `Recorrentes` (a aba `Solicitações` é criada sozinha) com os cabeçalhos da linha 1 (veja `Code.gs`, constantes `RES` e `REC`).
 2. **Apps Script:** na planilha, Extensões → Apps Script. Cole `apps-script/Code.gs`, troque `ADMIN_SENHA` no topo por `007` (igual à do painel) e salve. A coluna `PIN (hash)` da planilha continua existindo, mas fica vazia.
    - Implantar → Nova implantação → Aplicativo da Web → executar como **você**, acesso **Qualquer pessoa**.
    - Copie a URL (termina em `/exec`).

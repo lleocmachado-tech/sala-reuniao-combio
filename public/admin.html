@@ -129,10 +129,10 @@ dialog::backdrop{background:#0a2514aa}
   <div id="aviso" class="msg"></div>
 
   <section class="card" id="cardPend" style="border:2px solid var(--amar);display:none">
-    <h2>⚠ Pendências: cancelamentos feitos no painel público (<span id="nPend">0</span>)</h2>
-    <div class="msg info" style="margin-bottom:10px;font-weight:500">O horário já foi liberado. <b>Confirmar</b> encerra a pendência; <b>Reativar</b> devolve a reserva (se o cancelamento foi indevido).</div>
+    <h2>⚠ Solicitações de cancelamento do painel público (<span id="nPend">0</span>)</h2>
+    <div class="msg info" style="margin-bottom:10px;font-weight:500">A reunião continua no calendário. <b>Aprovar</b> tira a reunião do calendário (em recorrente, só aquele dia); <b>Recusar</b> mantém tudo como está.</div>
     <div class="tab"><table>
-      <thead><tr><th>Data</th><th>Horário</th><th>Responsável</th><th>Motivo</th><th>Histórico / obs.</th><th>Ações</th></tr></thead>
+      <thead><tr><th>Data</th><th>Horário</th><th>Reunião</th><th>Solicitante</th><th>Motivo do cancelamento</th><th>Ações</th></tr></thead>
       <tbody id="tbodyPend"></tbody>
     </table></div>
   </section>
@@ -289,7 +289,7 @@ async function buscar() {
   $('tbody').innerHTML = '<tr><td colspan="9">Carregando…</td></tr>';
   const r = await api('admin-listar?' + q);
   if (!r.ok) { aviso(r.data.erro || 'Falha ao listar.'); $('tbody').innerHTML = '<tr><td colspan="9">—</td></tr>'; return; }
-  aviso(''); lista = r.data.reservas; recs = r.data.recorrentes || []; renderTabela(); renderRec(); carregarSemana(); carregarPend();
+  aviso(''); lista = r.data.reservas; recs = r.data.recorrentes || []; pend = r.data.solicitacoes || []; renderTabela(); renderRec(); renderPend(); carregarSemana();
 }
 function renderTabela() {
   $('tbody').innerHTML = lista.length ? lista.map((r) => `
@@ -306,16 +306,22 @@ function renderTabela() {
       </td></tr>`).join('') : '<tr><td colspan="9">Nenhuma reserva encontrada.</td></tr>';
 }
 let pend = [];
-async function carregarPend() {
-  const r = await api('admin-listar?status=' + encodeURIComponent('Cancelada (pendente)'));
-  if (!r.ok) return;
-  pend = r.data.reservas; $('nPend').textContent = pend.length; $('cardPend').style.display = pend.length ? 'block' : 'none';
-  $('tbodyPend').innerHTML = pend.map((r) => `
-    <tr><td>${fmtData(r.data)}</td><td class="mono">${esc(r.inicio)}–${esc(r.fim)}</td><td>${esc(r.responsavel)}</td><td>${esc(r.motivo)}</td>
-      <td class="obs">${esc(r.obs)}</td>
-      <td class="ac"><button class="btn peq" data-a="cancelar" data-id="${esc(r.id)}">Confirmar</button>
-        <button class="btn sec peq" data-a="reativar" data-id="${esc(r.id)}">Reativar</button></td></tr>`).join('');
+function renderPend() {
+  $('nPend').textContent = pend.length; $('cardPend').style.display = pend.length ? 'block' : 'none';
+  $('tbodyPend').innerHTML = pend.map((x) => `
+    <tr><td>${fmtData(x.data)}${recs.some((s) => s.id === x.rid) ? '<br><small>recorrente: só este dia</small>' : ''}</td><td class="mono">${esc(x.inicio)}–${esc(x.fim)}</td><td>${esc(x.reuniao)}</td><td>${esc(x.nome)}</td><td>${esc(x.motivo)}</td>
+      <td class="ac"><button class="btn peq" data-d="aprovar" data-id="${esc(x.id)}">Aprovar</button>
+        <button class="btn sec peq" data-d="recusar" data-id="${esc(x.id)}">Recusar</button></td></tr>`).join('');
 }
+$('tbodyPend').addEventListener('click', async (e) => {
+  const b = e.target.closest('button[data-d]'); if (!b) return;
+  const x = pend.find((p) => p.id === b.dataset.id); if (!x) return;
+  if (!confirm(`${b.dataset.d === 'aprovar' ? 'APROVAR' : 'RECUSAR'} o cancelamento de ${fmtData(x.data)} ${x.inicio}–${x.fim} (${x.reuniao})?`)) return;
+  b.disabled = true;
+  const r = await api('admin-decidir', { id: x.id, decisao: b.dataset.d });
+  if (!r.ok) { aviso(r.data.erro || 'Erro na operação.'); b.disabled = false; return; }
+  aviso(''); buscar();
+});
 $('bBuscar').onclick = buscar;
 $('fQ').onkeydown = (e) => { if (e.key === 'Enter') buscar(); };
 
@@ -518,7 +524,7 @@ $('bForcar').onclick = () => {
 /* ---- ações da tabela ---- */
 const acaoTabela = async (e) => {
   const b = e.target.closest('button[data-a]'); if (!b) return;
-  const r = lista.find((x) => x.id === b.dataset.id) || pend.find((x) => x.id === b.dataset.id); if (!r) return;
+  const r = lista.find((x) => x.id === b.dataset.id) ; if (!r) return;
   const rotulo = `${fmtData(r.data)} ${r.inicio}–${r.fim} · ${r.responsavel}`;
   if (b.dataset.a === 'editar') return abrirEd(r);
   b.disabled = true;
@@ -537,7 +543,7 @@ const acaoTabela = async (e) => {
   if (!res.ok) { aviso(res.data.erro || 'Erro na operação.'); b.disabled = false; return; }
   aviso(''); buscar();
 };
-$('tbody').addEventListener('click', acaoTabela); $('tbodyPend').addEventListener('click', acaoTabela);
+$('tbody').addEventListener('click', acaoTabela);
 
 /* ---- recorrentes ---- */
 function renderRec() {

@@ -4,7 +4,8 @@
  * (executar como: você · acesso: qualquer pessoa). O site (Netlify) só hospeda a parte visual e chama esta URL.
  *
  * ANTES DE IMPLANTAR: troque ADMIN_SENHA abaixo (no Apps Script publicado use a mesma senha do painel admin).
- * Cancelamento público não usa PIN: a reserva vira 'Cancelada (pendente)' e aparece como pendência no admin.
+ * Cancelamento público só gera uma SOLICITAÇÃO (aba 'Solicitações', criada sozinha). A reunião continua no calendário até o admin aprovar.
+ * Aprovada: reserva avulsa vira 'Cancelada'; reunião recorrente perde apenas AQUELA data (as outras semanas seguem).
  */
 const ADMIN_SENHA = 'TROQUE-ESTA-SENHA';
 const PENDENTE = 'Cancelada (pendente)';
@@ -13,6 +14,7 @@ const TZ = 'America/Sao_Paulo';
 const ABRE = 7 * 60, FECHA = 18 * 60, BLOCO = 30;
 const LIM = { responsavel: 60, motivo: 120, obs: 1000 };
 const RES = { nome: 'Reservas', cols: { 'ID Reserva': 'id', 'Data': 'data', 'Início': 'inicio', 'Fim': 'fim', 'Responsável': 'responsavel', 'Motivo': 'motivo', 'PIN (hash)': 'pinHash', 'Status': 'status', 'Criado em': 'criadoEm', 'Origem': 'origem', 'Observação admin': 'obs' } }; // coluna 'PIN (hash)' é legado: fica vazia
+const SOL = { nome: 'Solicitações', cols: { 'ID Solicitação': 'id', 'ID Reunião': 'rid', 'Data': 'data', 'Início': 'inicio', 'Fim': 'fim', 'Reunião': 'reuniao', 'Solicitante': 'nome', 'Motivo do cancelamento': 'motivo', 'Status': 'status', 'Criado em': 'criadoEm', 'Decidido em': 'decididoEm' } };
 const REC = { nome: 'Recorrentes', cols: { 'ID Série': 'id', 'Dia da semana': 'dia', 'Início': 'inicio', 'Fim': 'fim', 'Responsável': 'responsavel', 'Motivo': 'motivo', 'Status': 'status', 'Vigência início': 'vigIni', 'Vigência fim': 'vigFim', 'Criado em': 'criadoEm', 'Observação admin': 'obs' } };
 
 // ======================= ENTRADA (HTTP) =======================
@@ -30,7 +32,7 @@ function responder(d) {
     const ag = agora();
     if (rota === 'reservas') return saida(rReservas(d, ag));
     if (rota === 'reservar') return saida(comTrava(() => criar(abrir(), d, { origem: 'Painel', agora: ag }), d.reqId));
-    if (rota === 'cancelar') return saida(comTrava(() => cancelarPublico(abrir(), d, { agora: ag }), d.reqId));
+    if (rota === 'cancelar') return saida(comTrava(() => solicitarCancelamento(abrir(), d, { agora: ag }), d.reqId));
     if (rota.indexOf('admin-') === 0) {
       conferirAdmin(d.senha);
       const f = d.forcar === true;
@@ -43,6 +45,7 @@ function responder(d) {
           case 'admin-cancelar': return cancelarAdmin(sh, d, { agora: ag });
           case 'admin-reativar': return reativar(sh, d, { forcar: f, agora: ag });
           case 'admin-excluir': return excluir(sh, d);
+          case 'admin-decidir': return decidir(sh, d, { agora: ag });
           case 'admin-recorrente': return recorrente(sh, d, { agora: ag });
         }
         throw new Erro(404, 'Rota desconhecida.');
@@ -92,7 +95,7 @@ function rReservas(d, ag) {
   try { lista = JSON.parse(c.get(k)); } catch (e) {}
   if (!lista) {
     const sh = abrir();
-    lista = sh.reservas.concat(expandir(sh.recorrentes, de, ate))
+    lista = sh.reservas.concat(expandir(sh.recorrentes, de, ate, sh.exc))
       .filter((r) => r.status === 'Ativa' && r.data >= de && r.data <= ate)
       .sort((a, b) => (a.data + a.inicio).localeCompare(b.data + b.inicio)).map(pub);
     try { c.put(k, JSON.stringify(lista), 15); } catch (e) {}
@@ -103,14 +106,14 @@ function rReservas(d, ag) {
 function rListar(d) {
   const busca = String(d.q || '').trim().toLowerCase(), sh = abrir();
   let lista = sh.reservas;
-  if (String(d.expandir) === '1' && isData(d.de || '') && isData(d.ate || '')) lista = lista.concat(expandir(sh.recorrentes, d.de, d.ate));
+  if (String(d.expandir) === '1' && isData(d.de || '') && isData(d.ate || '')) lista = lista.concat(expandir(sh.recorrentes, d.de, d.ate, sh.exc));
   const reservas = lista
     .filter((r) => (!d.de || r.data >= d.de) && (!d.ate || r.data <= d.ate))
     .filter((r) => !d.status || d.status === 'todas' || r.status === d.status)
     .filter((r) => !busca || r.responsavel.toLowerCase().indexOf(busca) >= 0)
     .sort((a, b) => (a.data + a.inicio).localeCompare(b.data + b.inicio)).map(adm);
   const recorrentes = sh.recorrentes.slice().sort((a, b) => diaIdx(a.dia) - diaIdx(b.dia) || a.inicio.localeCompare(b.inicio)).map(serie);
-  return { reservas: reservas, recorrentes: recorrentes };
+  return { reservas: reservas, recorrentes: recorrentes, solicitacoes: sh.sols.filter((x) => x.status === 'Pendente').map(solic) };
 }
 
 // ======================= PLANILHA =======================
@@ -131,7 +134,9 @@ function lerAba(ss, def) {
   return { aba: aba, itens: itens, idx: idx };
 }
 function abrir() {
-  const ss = SpreadsheetApp.getActive(), a = lerAba(ss, RES), b = lerAba(ss, REC);
+  const ss = SpreadsheetApp.getActive();
+  if (!ss.getSheetByName(SOL.nome)) { const n = ss.insertSheet(SOL.nome), t = Object.keys(SOL.cols); n.getRange(1, 1, 1, t.length).setValues([t]); }
+  const a = lerAba(ss, RES), b = lerAba(ss, REC), c = lerAba(ss, SOL);
   a.itens.forEach((r) => { r.data = r.data.slice(0, 10); });
   const ins = (x) => (obj) => {
     const linha = new Array(Math.max.apply(null, Object.values(x.idx)) + 1).fill('');
@@ -144,7 +149,9 @@ function abrir() {
     Object.keys(campos).forEach((k) => { if (x.idx[k] === undefined) return; const rg = x.aba.getRange(row, x.idx[k] + 1); rg.setNumberFormat('@'); rg.setValue(String(campos[k])); });
   };
   return {
-    reservas: a.itens, recorrentes: b.itens,
+    reservas: a.itens, recorrentes: b.itens, sols: c.itens,
+    exc: new Set(c.itens.filter((x) => x.status === 'Aprovada').map((x) => x.rid + '|' + x.data.slice(0, 10))), // datas de séries recorrentes canceladas com aprovação
+    inserirSol: ins(c), atualizarSol: upd(c),
     inserir: ins(a), atualizar: upd(a), excluir: (row) => a.aba.deleteRow(row),
     inserirRec: ins(b), atualizarRec: upd(b), excluirRec: (row) => b.aba.deleteRow(row),
   };
@@ -206,13 +213,13 @@ const diaIdx = (nome) => { const n = semAcento(nome).replace('-feira', ''); retu
 const dow = (iso) => new Date(iso + 'T12:00:00Z').getUTCDay();
 const addDias = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const sobrepoe = (a, b) => toMin(a.inicio) < toMin(b.fim) && toMin(a.fim) > toMin(b.inicio);
-function expandir(series, de, ate) {
+function expandir(series, de, ate, exc) {
   const out = [];
   series.forEach((s) => {
     const k = diaIdx(s.dia);
     if (s.status !== 'Ativa' || k < 0) return;
     for (let d = de; d <= ate; d = addDias(d, 1)) {
-      if (dow(d) !== k || (s.vigIni && d < s.vigIni) || (s.vigFim && d > s.vigFim)) continue;
+      if (dow(d) !== k || (s.vigIni && d < s.vigIni) || (s.vigFim && d > s.vigFim) || (exc && exc.has(s.id + '|' + d))) continue;
       out.push({ id: s.id, data: d, inicio: s.inicio, fim: s.fim, responsavel: s.responsavel, motivo: s.motivo, status: 'Ativa', criadoEm: s.criadoEm, origem: 'Recorrente', obs: '', recorrente: true });
     }
   });
@@ -247,9 +254,10 @@ function mensagemConflitoRec(cs) {
 const pub = (r) => ({ id: r.id, data: r.data, inicio: r.inicio, fim: r.fim, responsavel: r.responsavel, motivo: r.motivo, recorrente: !!r.recorrente });
 const adm = (r) => Object.assign(pub(r), { status: r.status, criadoEm: r.criadoEm, origem: r.origem, obs: r.obs || '' });
 const serie = (r) => ({ id: r.id, dia: r.dia, inicio: r.inicio, fim: r.fim, responsavel: r.responsavel, motivo: r.motivo, status: r.status, vigIni: r.vigIni, vigFim: r.vigFim, criadoEm: r.criadoEm, obs: r.obs || '' });
+const solic = (x) => ({ id: x.id, rid: x.rid, data: x.data.slice(0, 10), inicio: x.inicio, fim: x.fim, reuniao: x.reuniao, nome: x.nome, motivo: x.motivo, status: x.status, criadoEm: x.criadoEm });
 const carimbo = (ag) => fmtData(ag.data) + ' ' + toHHMM(ag.min);
 const forcarTxt = (forcar, cs) => forcar ? ' com "forçar"' + (cs.length ? ', ignorando conflito com ' + cs.map((c) => c.id).join(', ') : '') : '';
-const todas = (sh, de, ate) => sh.reservas.concat(expandir(sh.recorrentes, de, ate));
+const todas = (sh, de, ate) => sh.reservas.concat(expandir(sh.recorrentes, de, ate, sh.exc));
 function achar(sh, id) {
   const r = sh.reservas.filter((x) => x.id === String(id || '').trim().toUpperCase())[0];
   if (!r) throw new Erro(404, 'Reserva não encontrada.');
@@ -299,15 +307,35 @@ function reativar(sh, d, o) {
 }
 function excluir(sh, d) { const r = achar(sh, d.id); sh.excluir(r.rowId); return { ok: true, id: r.id }; }
 
-// Cancelamento público sem PIN: libera o horário na hora e deixa a pendência para o admin confirmar ou reativar.
-function cancelarPublico(sh, d, o) {
-  const r = sh.reservas.filter((x) => x.id === String(d.id || '').trim().toUpperCase())[0];
-  if (!r) throw new Erro(404, 'Reserva não encontrada.');
-  if (r.status !== 'Ativa') throw new Erro(400, 'Esta reserva já estava cancelada.');
-  if (validarPassado(r.data, r.fim, o.agora)) throw new Erro(400, 'Esta reunião já terminou.');
-  const obs = addObs(r.obs, 'Cancelamento solicitado pelo painel público em ' + carimbo(o.agora) + '.');
-  sh.atualizar(r.rowId, { status: PENDENTE, obs: obs });
-  return { ok: true, reserva: pub(r) };
+// Cancelamento público: só registra a solicitação (não mexe no calendário). id + data vêm da reunião escolhida na lista.
+function solicitarCancelamento(sh, d, o) {
+  const id = String(d.id || '').trim().toUpperCase(), nome = limpar(d.nome), motivo = limpar(d.motivo);
+  if (!nome) throw new Erro(400, 'Informe seu nome.');
+  if (!motivo) throw new Erro(400, 'Informe o motivo do cancelamento.');
+  if (nome.length > LIM.responsavel) throw new Erro(400, 'Nome: máximo de ' + LIM.responsavel + ' caracteres.');
+  if (motivo.length > 200) throw new Erro(400, 'Motivo: máximo de 200 caracteres.');
+  let r = sh.reservas.filter((x) => x.id === id)[0], data = r && r.data;
+  if (!r) {
+    data = String(d.data || '').trim();
+    r = isData(data) ? expandir(sh.recorrentes.filter((x) => x.id === id), data, data, sh.exc)[0] : null;
+  }
+  if (!r || r.status !== 'Ativa') throw new Erro(404, 'Reunião não encontrada (ou já cancelada).');
+  if (validarPassado(data, r.fim, o.agora)) throw new Erro(400, 'Esta reunião já terminou.');
+  if (sh.sols.some((x) => x.rid === id && x.data.slice(0, 10) === data && x.status === 'Pendente')) throw new Erro(400, 'Já existe uma solicitação de cancelamento pendente para esta reunião.');
+  sh.inserirSol({ id: gerarId(sh.sols.map((x) => x.id)), rid: id, data: data, inicio: r.inicio, fim: r.fim, reuniao: r.responsavel + ' — ' + r.motivo, nome: nome, motivo: motivo, status: 'Pendente', criadoEm: o.agora.iso, decididoEm: '' });
+  return { ok: true };
+}
+// Admin decide: aprovar (avulsa vira Cancelada; recorrente perde só esta data) ou recusar (nada muda no calendário).
+function decidir(sh, d, o) {
+  const x = sh.sols.filter((s) => s.id === String(d.id || '').trim().toUpperCase())[0];
+  if (!x) throw new Erro(404, 'Solicitação não encontrada.');
+  if (x.status !== 'Pendente') throw new Erro(400, 'Esta solicitação já foi decidida.');
+  if (d.decisao !== 'aprovar' && d.decisao !== 'recusar') throw new Erro(400, 'Decisão inválida.');
+  const aprovar = d.decisao === 'aprovar', r = sh.reservas.filter((v) => v.id === x.rid)[0];
+  if (aprovar && r && r.status === 'Ativa') sh.atualizar(r.rowId, { status: 'Cancelada', obs: addObs(r.obs, 'Cancelamento aprovado pelo admin em ' + carimbo(o.agora) + ' (solicitado por ' + x.nome + ': ' + x.motivo + ').') });
+  const novo = { status: aprovar ? 'Aprovada' : 'Recusada', decididoEm: o.agora.iso };
+  sh.atualizarSol(x.rowId, novo);
+  return { solicitacao: solic(Object.assign({}, x, novo)) };
 }
 
 function achaSerie(sh, id) {

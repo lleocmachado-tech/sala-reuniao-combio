@@ -24,8 +24,8 @@ header h1{margin:0;font-size:clamp(1.3rem,3vw,2.2rem);font-weight:600;flex:1}
 .relogio{text-align:right;line-height:1.1}
 .relogio b{display:block;font-size:clamp(1.6rem,4vw,3rem);font-weight:600;font-variant-numeric:tabular-nums}
 .relogio span{font-size:clamp(.85rem,1.6vw,1.2rem);opacity:.9}
-main{max-width:1500px;margin:0 auto;padding:clamp(12px,2vw,28px);display:grid;gap:clamp(12px,2vw,24px)}
-.card{background:#fff;border:1px solid var(--bd);border-radius:var(--r);padding:clamp(14px,2vw,24px)}
+main{max-width:1500px;margin:0 auto;grid-template-columns:minmax(0,1fr);padding:clamp(12px,2vw,28px);display:grid;gap:clamp(12px,2vw,24px)}
+.card{min-width:0;background:#fff;border:1px solid var(--bd);border-radius:var(--r);padding:clamp(14px,2vw,24px)}
 .card h2{margin:0 0 12px;font-size:1.15rem;color:var(--v-esc)}
 
 /* STATUS */
@@ -72,7 +72,7 @@ main{max-width:1500px;margin:0 auto;padding:clamp(12px,2vw,28px);display:grid;ga
 .leg i{display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:-2px;margin-right:6px}
 
 /* LISTA + SEMANA */
-.duas{display:grid;gap:clamp(12px,2vw,24px);grid-template-columns:1fr}
+.duas{display:grid;gap:clamp(12px,2vw,24px);grid-template-columns:minmax(0,1fr)}
 @media(min-width:1000px){.duas{grid-template-columns:1.2fr 1fr}}
 .item{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;padding:10px 0;border-bottom:1px solid var(--bd)}
 .item:last-child{border:0}
@@ -183,6 +183,19 @@ header{padding-right:clamp(52px,5vw,64px)}
 #cardSem:fullscreen .sg-d{padding:2px;font-size:.68rem}
 #cardSem:fullscreen .sg-d b{font-size:.85rem}
 #cardSem:fullscreen .sg-cab{padding-bottom:2px}
+@media(max-width:700px){
+  /* celular: grade da semana rola para o lado (colunas legíveis) com a coluna de horas fixa à esquerda */
+  .sg{min-width:860px}
+  #semana .sg-cab,#semana .sg-corpo{grid-template-columns:40px repeat(6,minmax(0,1fr))}
+  #semana .sg-cab>div:last-child,#semana .sg-h.dir{display:none}
+  #semana .sg-cab>div:first-child,#semana .sg-corpo>.sg-h:first-child{position:sticky;left:0;z-index:6;background:#fff}
+  .sg-h span{right:2px;font-size:.74rem}
+  .nav .dataTit{min-width:0;flex-basis:100%}
+  .acoes .btn{flex:1 1 140px}
+  label input,label select,.nav input[type=date]{font-size:16px} /* evita o zoom automático do iPhone ao focar o campo */
+  .card{padding:12px}
+  main{padding:10px;gap:10px}
+}
 @media print{@page{size:A4 landscape;margin:10mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 /* PDF: sempre UMA folha. A classe .imp (ligada em beforeprint) deixa só o calendário, com largura da folha A4 paisagem, e a altura das linhas é calculada para caber. */
 body.imp{background:#fff;width:1040px;margin:0;overflow:visible}
@@ -222,7 +235,7 @@ body.imp .sg-d.hoje{background:#fff;color:var(--tx2);border-color:#8FB59D}
     <div class="sub" id="stSub"></div>
     <div class="acoes">
       <button class="btn" id="bReservar">Reservar sala</button>
-      <button class="btn sec" id="bCancelar">Cancelar minha reserva</button>
+      <button class="btn sec" id="bCancelar">Solicitar cancelamento</button>
     </div>
   </section>
 
@@ -283,13 +296,14 @@ body.imp .sg-d.hoje{background:#fff;color:var(--tx2);border-color:#8FB59D}
 
 <!-- CANCELAR -->
 <dialog id="dCan">
-  <div class="mh"><h3>Cancelar minha reserva</h3><button type="button" data-fechar aria-label="Fechar">×</button></div>
+  <div class="mh"><h3>Solicitar cancelamento</h3><button type="button" data-fechar aria-label="Fechar">×</button></div>
   <form id="fCan" class="mb" novalidate>
-    <label>Escolha a reserva<select name="sel"></select></label>
-    <label>…ou informe o ID da reserva<input name="rid" maxlength="12" placeholder="ex.: A3F09C21" style="text-transform:uppercase"></label>
-    <div class="msg info">O cancelamento é registrado e o administrador será avisado.</div>
+    <label>Reunião a cancelar<select name="sel"></select></label>
+    <label>Seu nome<input name="nome" maxlength="60" required autocomplete="name"></label>
+    <label>Motivo do cancelamento<input name="motivo" maxlength="200" required></label>
+    <div class="msg info">Isto envia uma solicitação ao administrador. A reunião continua no calendário até ele aprovar. Em reunião recorrente, vale só para o dia escolhido.</div>
     <div class="msg" id="canMsg" role="alert"></div>
-    <button class="btn perigo" id="bCanc" type="submit">Cancelar reserva</button>
+    <button class="btn perigo" id="bCanc" type="submit">Enviar solicitação</button>
   </form>
 </dialog>
 
@@ -452,6 +466,7 @@ function corDe(nome) {
 }
 const VERDES = ['#0F4A23', '#2E7D32', '#00695C', '#558B2F', '#1B5E20', '#388E3C', '#33691E', '#2E8B57']; // tons de verde, um por reunião (alternam para diferenciar blocos vizinhos)
 let HS = 44; // altura (px) de cada meia hora na grade (muda em tela cheia e na impressão)
+let _semChave = '';
 function renderSemana() {
   const a = agora(), seg = segunda(dia), n = (FECHA - ABRE) / 30;
   const dias = Array.from({ length: 6 }, (_, i) => addDias(seg, i)); // segunda a sábado
@@ -474,6 +489,8 @@ function renderSemana() {
   }).join('');
   $('semana').innerHTML = `<div class="sg-cab">${cab}</div><div class="sg-corpo" style="--hs:${HS}px">${horas.replace('__C__', '')}${cols}${horas.replace('__C__', 'dir')}</div>`;
   ajustarFonte($('semana'));
+  const chave = seg + dia, wrap = $('semana').parentElement; // celular: ao mudar de dia/semana, rola até a coluna do dia escolhido
+  if (chave !== _semChave) { _semChave = chave; const sel = $('semana').querySelector('.sg-d.sel'); wrap.scrollLeft = sel ? Math.max(0, sel.getBoundingClientRect().left - wrap.getBoundingClientRect().left + wrap.scrollLeft - 44) : 0; }
   $('semLeg').innerHTML = '<span><i style="background:var(--v-tenue);border:1px solid var(--bd)"></i>Livre</span><span><i style="background:#2E7D32"></i>Reservado (cada tom de verde é uma reunião)</span>';
 }
 
@@ -634,19 +651,19 @@ $('bCancelar').onclick = async () => {
   const a = agora();
   const r = await api(`/reservas?de=${a.data}&ate=${addDias(a.data, 30)}`);
   const l = r.ok ? r.data.reservas.filter((x) => x.data > a.data || mins(x.fim) > a.min) : [];
-  fCan.sel.innerHTML = '<option value="">— selecione —</option>' + l.map((x) => `<option value="${esc(x.id)}">${fmtData(x.data)} ${esc(x.inicio)}–${esc(x.fim)} · ${esc(x.responsavel)} — ${esc(x.motivo)}</option>`).join('');
+  fCan.sel.innerHTML = '<option value="">— selecione —</option>' + l.map((x) => `<option value="${esc(x.id)}|${esc(x.data)}">${x.recorrente ? '↻ ' : ''}${fmtData(x.data)} ${esc(x.inicio)}–${esc(x.fim)} · ${esc(x.responsavel)} — ${esc(x.motivo)}</option>`).join('');
 };
 let cancelando = false;
 fCan.onsubmit = async (e) => {
   e.preventDefault();
   if (cancelando) return;
-  const m = $('canMsg'), id = (fCan.rid.value.trim() || fCan.sel.value).toUpperCase();
-  if (!id) { m.className = 'msg erro'; m.textContent = 'Escolha a reserva ou informe o ID.'; return; }
-  cancelando = true; $('bCanc').disabled = true; $('bCanc').textContent = 'Cancelando…';
-  const r = await post('/cancelar', { id });
-  cancelando = false; $('bCanc').disabled = false; $('bCanc').textContent = 'Cancelar reserva';
-  if (r.ok) { m.className = 'msg ok'; m.textContent = '✔ Reserva cancelada. O administrador foi avisado.'; bust = Date.now(); carregar(); }
-  else { m.className = 'msg erro'; m.textContent = r.data.erro || 'Erro ao cancelar.'; }
+  const m = $('canMsg'), [id, data] = fCan.sel.value.split('|');
+  if (!id || !fCan.nome.value.trim() || !fCan.motivo.value.trim()) { m.className = 'msg erro'; m.textContent = 'Escolha a reunião e preencha seu nome e o motivo.'; return; }
+  cancelando = true; $('bCanc').disabled = true; $('bCanc').textContent = 'Enviando…';
+  const r = await post('/cancelar', { id, data, nome: fCan.nome.value, motivo: fCan.motivo.value });
+  cancelando = false; $('bCanc').disabled = false; $('bCanc').textContent = 'Enviar solicitação';
+  if (r.ok) { m.className = 'msg ok'; m.textContent = '✔ Solicitação enviada ao administrador. A reunião segue no calendário até a aprovação.'; fCan.reset(); }
+  else { m.className = 'msg erro'; m.textContent = r.data.erro || 'Erro ao enviar.'; }
 };
 
 /* ---------------- admin (botão discreto) ---------------- */
