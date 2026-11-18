@@ -2,7 +2,7 @@
 
 Simples assim:
 
-- **Netlify** hospeda só a parte visual (`public/index.html`).
+- **GitHub Pages** hospeda só a parte visual (pasta `public`: painel e admin).
 - **Google Sheets** guarda tudo (abas `Reservas` e `Recorrentes`).
 - **Google Apps Script** (`apps-script/Code.gs`) é o backend: roda dentro da planilha, aplica as regras e lê/grava as linhas.
 - **Painel admin** (`public/admin.html`) fica no mesmo site e abre pelo botão discreto ⚙ no canto superior direito do painel (senha `007`).
@@ -13,7 +13,7 @@ O painel público e o admin conversam direto com a URL do Apps Script. Não há 
 
 | Quem | O que faz |
 |---|---|
-| Painel público (Netlify) | Vê a semana (livre/ocupado, uma cor por responsável), reserva e cancela sem PIN (o cancelamento libera o horário e vira uma pendência no admin) |
+| Painel público (Pages) | Vê a semana (livre/ocupado, uma cor por responsável), reserva e cancela sem PIN (o cancelamento libera o horário e vira uma pendência no admin) |
 | Painel admin (local) | Calendário da semana: clicar cria, clicar numa reunião edita, arrastar remaneja, puxar a borda muda o fim. Reuniões recorrentes (para sempre, por N semanas ou até uma data) e senha de admin |
 | Apps Script | Valida 07:00–18:00 em blocos de 30 min, sem passado, sem conflito (encostar vale), uma gravação por vez |
 
@@ -25,7 +25,7 @@ O painel público e o admin conversam direto com a URL do Apps Script. Não há 
    - Copie a URL (termina em `/exec`).
    - Depois de qualquer mudança no código: Implantar → Gerenciar implantações → lápis → **Nova versão** (a URL continua a mesma).
 3. **Painel público:** em `public/index.html`, a constante `API` recebe essa URL.
-4. **Netlify:** o site está ligado ao repositório do GitHub; cada push na `main` publica sozinho (publicar a pasta `public`).
+4. **Hospedagem (GitHub Pages):** o site é publicado pela pasta `public` por `.github/workflows/pages.yml`; cada push na `main` publica sozinho. Endereço: https://lleocmachado-tech.github.io/sala-reuniao-combio/
 5. **Painel admin:** nada a configurar; `public/admin.html` já usa a mesma `API` e a senha `007`.
 
 ## Observações
