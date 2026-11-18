@@ -114,6 +114,7 @@ main{max-width:1500px;margin:0 auto;padding:clamp(12px,2vw,28px);display:grid;ga
 .sl.passou{background:repeating-linear-gradient(45deg,#f3f3f3 0 6px,#fafafa 6px 12px)}
 .bl{position:absolute;left:2px;right:2px;color:#fff;border-radius:7px;padding:3px 6px;overflow:hidden;font-size:12.5px;line-height:1.25;box-shadow:0 1px 3px #0003;border-left:4px solid #fff6;overflow-wrap:anywhere}
 .bl b{font-weight:700}
+.bl.rosa{background:#F8D7E3!important;color:#6B1F3F;border-left-color:#E58CAD}
 .bl span{opacity:.92}
 .sg-agora{position:absolute;left:0;right:0;height:2px;background:#111;z-index:2}
 .leg2{display:flex;gap:6px 16px;flex-wrap:wrap;font-size:.85rem;color:var(--tx2);margin-top:10px}
@@ -465,8 +466,8 @@ function renderSemana() {
       sl += `<div class="sl${i % 2 ? '' : ' h'} ${passou ? 'passou' : 'livre'}" data-d="${d}" data-m="${m}"${passou ? '' : ` title="Livre ${hhmm(m)} · clique para reservar"`}></div>`;
     }
     const bl = doDia(d).map((r, k) => {
-      const i = mins(r.inicio), f = mins(r.fim), c = VERDES[(ci * 3 + k) % VERDES.length];
-      return `<div class="bl${f - i <= 30 ? ' curto' : ''}" style="top:${(i - ABRE) / 30 * HS}px;height:${(f - i) / 30 * HS - 2}px;background:${c}" title="${esc(r.inicio)}–${esc(r.fim)} · ${esc(r.responsavel)} — ${esc(r.motivo)}"><b class="hr">${esc(r.inicio)}–${esc(r.fim)}</b> <b class="mt">${esc(r.motivo)}</b> <span class="rp">${esc(r.responsavel)}</span></div>`;
+      const i = mins(r.inicio), f = mins(r.fim), c = VERDES[(ci * 3 + k) % VERDES.length], rosa = /elas operam/i.test(r.motivo + r.responsavel);
+      return `<div class="bl${f - i <= 30 ? ' curto' : ''}${rosa ? ' rosa' : ''}" style="top:${(i - ABRE) / 30 * HS}px;height:${(f - i) / 30 * HS - 2}px;background:${c}" title="${esc(r.inicio)}–${esc(r.fim)} · ${esc(r.responsavel)} — ${esc(r.motivo)}"><b class="hr">${esc(r.inicio)}–${esc(r.fim)}</b> <b class="mt">${esc(r.motivo)}</b> <span class="rp">${esc(r.responsavel)}</span></div>`;
     }).join('');
     const ag = d === a.data && a.min >= ABRE && a.min <= FECHA ? `<div class="sg-agora" style="top:${(a.min - ABRE) / 30 * HS}px"></div><div class="sg-agora-p" style="top:${(a.min - ABRE) / 30 * HS}px"></div>` : '';
     return `<div class="sg-col${d === a.data ? ' hoje' : ''}">${sl}${bl}${ag}</div>`;
