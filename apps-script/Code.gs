@@ -3,16 +3,16 @@
  * Vive dentro da planilha Google (Extensões > Apps Script) e é implantado como "Aplicativo da Web"
  * (executar como: você · acesso: qualquer pessoa). O site (Netlify) só hospeda a parte visual e chama esta URL.
  *
- * ANTES DE IMPLANTAR: troque ADMIN_SENHA e PIN_SAL abaixo (ou deixe os valores já preenchidos).
- * Trocar PIN_SAL depois de existirem reservas invalida os PINs antigos.
+ * ANTES DE IMPLANTAR: troque ADMIN_SENHA abaixo (no Apps Script publicado use a mesma senha do painel admin).
+ * Cancelamento público não usa PIN: a reserva vira 'Cancelada (pendente)' e aparece como pendência no admin.
  */
 const ADMIN_SENHA = 'TROQUE-ESTA-SENHA';
-const PIN_SAL = 'TROQUE-ESTE-SAL';
+const PENDENTE = 'Cancelada (pendente)';
 
 const TZ = 'America/Sao_Paulo';
 const ABRE = 7 * 60, FECHA = 18 * 60, BLOCO = 30;
 const LIM = { responsavel: 60, motivo: 120, obs: 1000 };
-const RES = { nome: 'Reservas', cols: { 'ID Reserva': 'id', 'Data': 'data', 'Início': 'inicio', 'Fim': 'fim', 'Responsável': 'responsavel', 'Motivo': 'motivo', 'PIN (hash)': 'pinHash', 'Status': 'status', 'Criado em': 'criadoEm', 'Origem': 'origem', 'Observação admin': 'obs' } };
+const RES = { nome: 'Reservas', cols: { 'ID Reserva': 'id', 'Data': 'data', 'Início': 'inicio', 'Fim': 'fim', 'Responsável': 'responsavel', 'Motivo': 'motivo', 'PIN (hash)': 'pinHash', 'Status': 'status', 'Criado em': 'criadoEm', 'Origem': 'origem', 'Observação admin': 'obs' } }; // coluna 'PIN (hash)' é legado: fica vazia
 const REC = { nome: 'Recorrentes', cols: { 'ID Série': 'id', 'Dia da semana': 'dia', 'Início': 'inicio', 'Fim': 'fim', 'Responsável': 'responsavel', 'Motivo': 'motivo', 'Status': 'status', 'Vigência início': 'vigIni', 'Vigência fim': 'vigFim', 'Criado em': 'criadoEm', 'Observação admin': 'obs' } };
 
 // ======================= ENTRADA (HTTP) =======================
@@ -196,11 +196,6 @@ function mensagemConflito(cs) {
   if (!cs.length) return 'Não foi possível reservar: outra reserva foi feita ao mesmo tempo para este horário. Escolha outro horário.';
   return 'Não foi possível reservar: a sala já está ocupada ' + cs.map((c) => 'das ' + c.inicio + ' às ' + c.fim + ' por ' + c.responsavel + ' (' + c.motivo + ')').join('; ') + '. Escolha outro horário.';
 }
-function hashPin(id, pin) {
-  return Utilities.computeHmacSha256Signature(id + ':' + pin, PIN_SAL).map((b) => ('0' + (b & 255).toString(16)).slice(-2)).join('');
-}
-const pinConfere = (id, pin, hash) => hashPin(id, String(pin || '')) === String(hash || '');
-const gerarPin = () => String(parseInt(Utilities.getUuid().replace(/-/g, '').slice(0, 8), 16) % 10000).padStart(4, '0');
 function gerarId(existentes) { let id; do id = Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase(); while (existentes.indexOf(id) >= 0); return id; }
 const addObs = (antiga, nova) => [antiga, nova].filter(Boolean).join(' | ').slice(-LIM.obs);
 
@@ -271,10 +266,10 @@ function criar(sh, d, o) {
   const v = n.v, forcar = o.forcar === true;
   if (!forcar) { const e = validarPassado(v.data, v.inicio, o.agora); if (e) throw new Erro(400, e); }
   const cs = checarConflito(sh, v, null, forcar);
-  const id = gerarId(sh.reservas.map((r) => r.id).concat(sh.recorrentes.map((r) => r.id))), pin = gerarPin();
-  const r = Object.assign({ id: id }, v, { pinHash: hashPin(id, pin), status: 'Ativa', criadoEm: o.agora.iso, origem: o.origem, obs: forcar ? 'Criada pelo admin em ' + carimbo(o.agora) + forcarTxt(true, cs) + '.' : '' });
+  const id = gerarId(sh.reservas.map((r) => r.id).concat(sh.recorrentes.map((r) => r.id)));
+  const r = Object.assign({ id: id }, v, { pinHash: '', status: 'Ativa', criadoEm: o.agora.iso, origem: o.origem, obs: forcar ? 'Criada pelo admin em ' + carimbo(o.agora) + forcarTxt(true, cs) + '.' : '' });
   sh.inserir(r);
-  return { reserva: pub(r), pin: pin };
+  return { reserva: pub(r) };
 }
 function editar(sh, d, o) {
   const r = achar(sh, d.id), forcar = o.forcar === true;
@@ -290,8 +285,8 @@ function editar(sh, d, o) {
 }
 function cancelarAdmin(sh, d, o) {
   const r = achar(sh, d.id);
-  if (r.status !== 'Ativa') throw new Erro(400, 'A reserva já está cancelada.');
-  const motivo = limpar(d.motivo).slice(0, 200), obs = addObs(r.obs, 'Cancelada pelo admin em ' + carimbo(o.agora) + (motivo ? ': ' + motivo : '') + '.');
+  if (r.status === 'Cancelada') throw new Erro(400, 'A reserva já está cancelada.');
+  const motivo = limpar(d.motivo).slice(0, 200), obs = addObs(r.obs, (r.status === PENDENTE ? 'Cancelamento confirmado pelo admin em ' : 'Cancelada pelo admin em ') + carimbo(o.agora) + (motivo ? ': ' + motivo : '') + '.');
   sh.atualizar(r.rowId, { status: 'Cancelada', obs: obs });
   return { reserva: adm(Object.assign({}, r, { status: 'Cancelada', obs: obs })) };
 }
@@ -304,15 +299,14 @@ function reativar(sh, d, o) {
 }
 function excluir(sh, d) { const r = achar(sh, d.id); sh.excluir(r.rowId); return { ok: true, id: r.id }; }
 
-// PIN errado e "não existe" têm a mesma mensagem. Limite: 5 erros por reserva em 15 min.
+// Cancelamento público sem PIN: libera o horário na hora e deixa a pendência para o admin confirmar ou reativar.
 function cancelarPublico(sh, d, o) {
-  const id = String(d.id || '').trim().toUpperCase(), c = CacheService.getScriptCache(), k = 'pin' + id, n = +(c.get(k) || 0);
-  if (n >= 5) throw new Erro(429, 'Muitas tentativas incorretas. Aguarde alguns minutos.');
-  const r = sh.reservas.filter((x) => x.id === id)[0];
-  if (!r || !pinConfere(r.id, d.pin, r.pinHash)) { c.put(k, String(n + 1), 900); throw new Erro(403, 'Reserva não encontrada ou PIN incorreto.'); }
+  const r = sh.reservas.filter((x) => x.id === String(d.id || '').trim().toUpperCase())[0];
+  if (!r) throw new Erro(404, 'Reserva não encontrada.');
   if (r.status !== 'Ativa') throw new Erro(400, 'Esta reserva já estava cancelada.');
-  const obs = addObs(r.obs, 'Cancelada pelo painel público em ' + carimbo(o.agora) + '.');
-  sh.atualizar(r.rowId, { status: 'Cancelada', obs: obs });
+  if (validarPassado(r.data, r.fim, o.agora)) throw new Erro(400, 'Esta reunião já terminou.');
+  const obs = addObs(r.obs, 'Cancelamento solicitado pelo painel público em ' + carimbo(o.agora) + '.');
+  sh.atualizar(r.rowId, { status: PENDENTE, obs: obs });
   return { ok: true, reserva: pub(r) };
 }
 

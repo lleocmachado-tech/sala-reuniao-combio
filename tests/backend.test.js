@@ -34,7 +34,7 @@ function ambiente() {
   };
   vm.createContext(ctx);
   let src = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'Code.gs'), 'utf8');
-  src = src.replace("const ADMIN_SENHA = 'TROQUE-ESTA-SENHA';", "const ADMIN_SENHA = 'senha-teste';").replace("const PIN_SAL = 'TROQUE-ESTE-SAL';", "const PIN_SAL = 'sal-teste';");
+  src = src.replace("const ADMIN_SENHA = 'TROQUE-ESTA-SENHA';", "const ADMIN_SENHA = 'senha-teste';");
   vm.runInContext(src, ctx);
   const chama = (d, admin) => JSON.parse(ctx.doPost({ parameter: {}, postData: { contents: JSON.stringify(admin ? { senha: 'senha-teste', ...d } : d) } }).t);
   return { chama, dados };
@@ -44,7 +44,7 @@ const R = (o) => ({ rota: 'reservar', data: '2030-01-10', inicio: '09:00', fim: 
 test('reserva livre; conflito parcial/total/vários; encostar é permitido', () => {
   const { chama } = ambiente();
   const a = chama(R());
-  assert.match(a.pin, /^\d{4}$/); assert.ok(a.reserva.id);
+  assert.equal(a.pin, undefined); assert.ok(a.reserva.id);
   for (const [i, f] of [['10:00', '11:00'], ['09:00', '10:30'], ['08:00', '12:00'], ['09:30', '10:00']]) {
     const e = chama(R({ inicio: i, fim: f }));
     assert.equal(e.status, 409, `${i}-${f}`); assert.match(e.erro, /09:00 às 10:30 por Ana \(Kickoff\)/);
@@ -65,25 +65,26 @@ test('validações: passado, fora do expediente, múltiplos de 30, campos, fórm
   assert.equal(r.responsavel, 'teste'); assert.equal(r.motivo, '1+1');
 });
 
-test('PIN: guardado só como hash; cancelar certo/errado; bloqueio após 5 erros', () => {
-  const { chama, dados } = ambiente();
-  const { reserva, pin } = chama(R());
-  assert.ok(!JSON.stringify(dados).includes(pin + '"'), 'PIN não aparece em texto');
-  assert.match(dados.Reservas[1][6], /^[0-9a-f]{64}$/);
-  const errado = pin === '0000' ? '0001' : '0000';
-  assert.equal(chama({ rota: 'cancelar', id: reserva.id, pin: errado }).status, 403);
-  assert.equal(chama({ rota: 'reservas', data: '2030-01-10' }).reservas.length, 1, 'continua ativa');
-  assert.equal(chama({ rota: 'cancelar', id: reserva.id, pin }).ok, true);
-  assert.equal(chama({ rota: 'reservas', data: '2030-01-10' }).reservas.length, 0);
-  const b = chama(R({ inicio: '13:00', fim: '14:00' }));
-  for (let i = 0; i < 5; i++) chama({ rota: 'cancelar', id: b.reserva.id, pin: errado });
-  assert.equal(chama({ rota: 'cancelar', id: b.reserva.id, pin: b.pin }).status, 429);
+test('cancelar sem PIN: libera o horário, vira pendência; admin confirma ou reativa', () => {
+  const { chama } = ambiente(), ad = (d) => chama(d, true);
+  const { reserva } = chama(R());
+  assert.equal(chama({ rota: 'cancelar', id: 'NAOEXIST' }).status, 404);
+  assert.equal(chama({ rota: 'cancelar', id: reserva.id }).ok, true);
+  assert.equal(chama({ rota: 'reservas', data: '2030-01-10' }).reservas.length, 0, 'horário liberado');
+  assert.equal(chama({ rota: 'cancelar', id: reserva.id }).status, 400, 'já cancelada');
+  const p = ad({ rota: 'admin-listar', status: 'Cancelada (pendente)' }).reservas;
+  assert.equal(p.length, 1); assert.match(p[0].obs, /solicitado pelo painel público/);
+  assert.equal(ad({ rota: 'admin-reativar', id: reserva.id }).reserva.status, 'Ativa');
+  chama({ rota: 'cancelar', id: reserva.id });
+  const c = ad({ rota: 'admin-cancelar', id: reserva.id });
+  assert.equal(c.reserva.status, 'Cancelada'); assert.match(c.reserva.obs, /confirmado pelo admin/);
+  assert.equal(ad({ rota: 'admin-listar', status: 'Cancelada (pendente)' }).reservas.length, 0);
 });
 
 test('privacidade: leitura pública sem PIN/hash/canceladas', () => {
   const { chama } = ambiente();
   const a = chama(R()); chama(R({ inicio: '13:00', fim: '14:00' }));
-  chama({ rota: 'cancelar', id: a.reserva.id, pin: a.pin });
+  chama({ rota: 'cancelar', id: a.reserva.id });
   const g = chama({ rota: 'reservas', data: '2030-01-10' }).reservas;
   assert.equal(g.length, 1);
   assert.deepEqual(Object.keys(g[0]).sort(), ['data', 'fim', 'id', 'inicio', 'motivo', 'recorrente', 'responsavel']);
@@ -102,7 +103,7 @@ test('admin: senha, editar (conflito → forçar), cancelar/reativar, criar, exc
   ad({ rota: 'admin-criar', data: '2030-01-10', inicio: '13:00', fim: '14:00', responsavel: 'X', motivo: 'ocupa' });
   assert.equal(ad({ rota: 'admin-reativar', id: A }).status, 409);
   const c = ad({ rota: 'admin-criar', data: '2030-01-11', inicio: '08:00', fim: '09:00', responsavel: 'Adm', motivo: 'm' });
-  assert.equal(c.reserva.id.length, 8); assert.match(c.pin, /^\d{4}$/);
+  assert.equal(c.reserva.id.length, 8);
   assert.equal(ad({ rota: 'admin-excluir', id: c.reserva.id }).ok, true);
   assert.equal(ad({ rota: 'admin-listar', status: 'todas' }).reservas.some((r) => r.id === c.reserva.id), false);
 });
@@ -130,7 +131,7 @@ test('recorrentes: aparecem na grade, conflitam, N semanas, editar, cancelar/rea
 test('reqId: repetir o mesmo envio não grava duas vezes e devolve o mesmo resultado', () => {
   const { chama, dados } = ambiente();
   const a = chama(R({ reqId: 'abc' })), b = chama(R({ reqId: 'abc' }));
-  assert.equal(b.reserva.id, a.reserva.id); assert.equal(b.pin, a.pin);
+  assert.equal(b.reserva.id, a.reserva.id);
   assert.equal(dados.Reservas.length, 2, 'uma única linha gravada');
   assert.equal(chama(R({ reqId: 'outro' })).status, 409, 'outro envio no mesmo horário conflita');
 });
