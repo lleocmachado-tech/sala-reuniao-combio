@@ -73,6 +73,7 @@ input:focus,select:focus{outline:none;border-color:var(--v)}
 .bl .rp{opacity:.88}
 .bl.curto .mt,.bl.curto .rp{display:inline}
 .bl.curto .rp::before{content:'· '}
+.bl.curto{padding-top:1px;padding-bottom:1px;line-height:1.12}
 .sg-agora{z-index:1}
 .sg-agora-p{position:absolute;left:0;width:0;height:0;margin-top:-5px;border-left:7px solid #111;border-top:5px solid transparent;border-bottom:5px solid transparent;filter:drop-shadow(0 0 1px #fff);z-index:4;pointer-events:none}
 .tl-bloco small{margin-top:2px}
@@ -360,7 +361,7 @@ function renderCal() {
     }
     const bl = calRes.filter((r) => r.data === d).map((r, k) => {
       const i = mins(r.inicio), f = mins(r.fim), c = VERDES[(ci * 3 + k) % VERDES.length], rosa = /elas operam/i.test(r.motivo + r.responsavel);
-      return '<div class="bl' + (r.recorrente ? ' rec' : '') + (rosa ? ' rosa' : '') + '" data-id="' + esc(r.id) + '" data-d="' + d + '" style="top:' + (i - ABRE) / 30 * HS + 'px;height:' + ((f - i) / 30 * HS - 2) + 'px;background:' + c + '" title="' + esc(r.inicio) + '–' + esc(r.fim) + ' · ' + esc(r.responsavel) + ' — ' + esc(r.motivo) + (r.recorrente ? ' (recorrente)' : '') + '"><b class="hr">' + (r.recorrente ? '🔁 ' : '') + esc(r.inicio) + '–' + esc(r.fim) + '</b> <b class="mt">' + esc(r.motivo) + '</b> <span class="rp">' + esc(r.responsavel) + '</span><div class="rs"></div></div>';
+      return '<div class="bl' + (f - i <= 30 ? ' curto' : '') + (r.recorrente ? ' rec' : '') + (rosa ? ' rosa' : '') + '" data-id="' + esc(r.id) + '" data-d="' + d + '" style="top:' + (i - ABRE) / 30 * HS + 'px;height:' + ((f - i) / 30 * HS - 2) + 'px;background:' + c + '" title="' + esc(r.inicio) + '–' + esc(r.fim) + ' · ' + esc(r.responsavel) + ' — ' + esc(r.motivo) + (r.recorrente ? ' (recorrente)' : '') + '"><b class="hr">' + (r.recorrente ? '🔁 ' : '') + esc(r.inicio) + '–' + esc(r.fim) + '</b> <b class="mt">' + esc(r.motivo) + '</b> <span class="rp">' + esc(r.responsavel) + '</span><div class="rs"></div></div>';
     }).join('');
     const ag = d === h0 && am >= ABRE && am <= FECHA ? '<div class="sg-agora" style="top:' + (am - ABRE) / 30 * HS + 'px"></div><div class="sg-agora-p" style="top:' + (am - ABRE) / 30 * HS + 'px"></div>' : '';
     return '<div class="sg-col" data-d="' + d + '">' + sl + bl + ag + '</div>';
